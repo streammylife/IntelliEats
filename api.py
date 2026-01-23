@@ -9,8 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, date
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import database
+
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -220,15 +226,46 @@ def search_foods(q: str, db: Session = Depends(get_db)):
 @app.get("/foods/barcode/{barcode}")
 def get_food_by_barcode(barcode: str, db: Session = Depends(get_db)):
     """Look up food by barcode"""
+    # First check our database
     food = db.query(database.Food).filter(
         database.Food.barcode == barcode
     ).first()
     
-    if not food:
-        # TODO: Query Open Food Facts API here
+    if food:
+        return food
+    
+    # Not in our DB, query Open Food Facts
+    from food_apis import OpenFoodFacts
+    
+    result = OpenFoodFacts.get_by_barcode(barcode)
+    
+    if not result:
         raise HTTPException(status_code=404, detail="Food not found")
     
-    return food
+    # Save to our database for future lookups
+    new_food = database.Food(
+        name=result['name'],
+        brand=result['brand'],
+        barcode=result['barcode'],
+        serving_size=result['serving_size'],
+        serving_size_grams=result['serving_size_grams'],
+        calories=result['calories'],
+        protein=result['protein'],
+        carbohydrates=result['carbohydrates'],
+        fat=result['fat'],
+        fiber=result['fiber'],
+        sugar=result['sugar'],
+        sodium=result['sodium'],
+        source=result['source'],
+        source_id=result['source_id'],
+        is_verified=True
+    )
+    
+    db.add(new_food)
+    db.commit()
+    db.refresh(new_food)
+    
+    return new_food
 
 
 @app.post("/entries", response_model=FoodEntryResponse)
@@ -255,8 +292,24 @@ def log_food(entry: FoodEntryCreate, user_id: int, db: Session = Depends(get_db)
     db.add(db_entry)
     db.commit()
     db.refresh(db_entry)
+
+    # IMPORTANT: Manually attach the food object so it's included in response
+    db_entry.food = food
+
     return db_entry
 
+@app.delete("/entries/{entry_id}")
+def delete_entry(entry_id: int, db: Session = Depends(get_db)):
+    """Delete a food entry"""
+    entry = db.query(database.FoodEntry).filter(database.FoodEntry.id == entry_id).first()
+    
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    
+    db.delete(entry)
+    db.commit()
+    
+    return {"status": "deleted", "id": entry_id}
 
 @app.get("/entries/daily/{user_id}")
 def get_daily_summary(
@@ -280,7 +333,9 @@ def get_daily_summary(
     start_datetime = datetime.combine(target_date, datetime.min.time())
     end_datetime = datetime.combine(target_date, datetime.max.time())
     
-    entries = db.query(database.FoodEntry).filter(
+    entries = db.query(database.FoodEntry).options(
+        joinedload(database.FoodEntry.food)  # ADD THIS LINE
+    ).filter(
         database.FoodEntry.user_id == user_id,
         database.FoodEntry.eaten_at >= start_datetime,
         database.FoodEntry.eaten_at <= end_datetime
@@ -305,6 +360,122 @@ def get_daily_summary(
         "entries": entries
     }
 
+@app.post("/analyze/daily/{user_id}")
+def analyze_daily_nutrition(user_id: int, date_str: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get AI analysis of daily nutrition using Claude"""
+    import os
+    from anthropic import Anthropic
+    from datetime import date as date_class
+    
+    # Get daily summary
+    if date_str:
+        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    else:
+        target_date = date_class.today()
+    
+    # Get user
+    user = db.query(database.User).filter(database.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get all entries for this date
+    start_datetime = datetime.combine(target_date, datetime.min.time())
+    end_datetime = datetime.combine(target_date, datetime.max.time())
+    
+    entries = db.query(database.FoodEntry).filter(
+        database.FoodEntry.user_id == user_id,
+        database.FoodEntry.eaten_at >= start_datetime,
+        database.FoodEntry.eaten_at <= end_datetime
+    ).all()
+    
+    # Calculate totals
+    total_calories = sum(e.calories for e in entries)
+    total_protein = sum(e.protein for e in entries)
+    total_carbs = sum(e.carbohydrates for e in entries)
+    total_fat = sum(e.fat for e in entries)
+    
+    # Format nutrition data for Claude
+    nutrition_summary = f"""Date: {target_date.strftime('%Y-%m-%d')}
+
+DAILY TOTALS:
+  Calories: {total_calories:.0f} / {user.calorie_goal} (goal)
+  Protein: {total_protein:.1f}g / {user.protein_goal}g (goal)
+  Carbs: {total_carbs:.1f}g / {user.carb_goal}g (goal)
+  Fat: {total_fat:.1f}g / {user.fat_goal}g (goal)
+
+MEALS:
+"""
+    
+    # Group by meal type
+    meals_by_type = {'breakfast': [], 'lunch': [], 'dinner': [], 'snack': []}
+    for entry in entries:
+        meals_by_type[entry.meal_type].append(entry)
+    
+    for meal_type, meal_entries in meals_by_type.items():
+        if meal_entries:
+            nutrition_summary += f"\n{meal_type.capitalize()}:\n"
+            for entry in meal_entries:
+                nutrition_summary += f"  - {entry.food.name}"
+                if entry.servings != 1.0:
+                    nutrition_summary += f" ({entry.servings} servings)"
+                nutrition_summary += f"\n    Cal: {entry.calories:.0f}, P: {entry.protein:.1f}g, C: {entry.carbohydrates:.1f}g, F: {entry.fat:.1f}g\n"
+    
+    # Call Claude API
+    try:
+        client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+        
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"""Analyze today's nutrition and provide feedback:
+
+{nutrition_summary}
+
+Please provide:
+1. Overall assessment of the day's nutrition
+2. What I did well
+3. Areas for improvement (macros, food choices)
+4. Specific suggestions for tomorrow
+5. Any concerning patterns or deficiencies
+
+Keep your response concise and actionable."""
+                }
+            ],
+            system="You are an expert nutritionist and dietitian. Provide evidence-based, practical advice. Be encouraging but honest about areas to improve."
+        )
+        
+        analysis_text = response.content[0].text
+        
+        # Save analysis to database
+        analysis_record = database.Analysis(
+            user_id=user_id,
+            analysis_type='daily',
+            analysis_date=target_date,
+            analysis_text=analysis_text,
+            avg_calories=total_calories,
+            avg_protein=total_protein,
+            avg_carbs=total_carbs,
+            avg_fat=total_fat
+        )
+        db.add(analysis_record)
+        db.commit()
+        
+        return {
+            "analysis": analysis_text,
+            "date": target_date.isoformat(),
+            "totals": {
+                "calories": total_calories,
+                "protein": total_protein,
+                "carbs": total_carbs,
+                "fat": total_fat
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

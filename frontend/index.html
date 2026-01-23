@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#4F46E5">
+    
+    <title>IntelliEats - Nutrition Tracker</title>
+    
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="images/icon-192.png">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <h1>IntelliEats</h1>
+            <div class="header-actions">
+                <button id="scanBarcodeBtn" class="icon-btn">📷</button>
+                <button id="analyzeBtn" class="icon-btn">🤖</button>
+            </div>
+        </header>
+
+        <!-- Daily Summary -->
+        <section class="daily-summary">
+            <h2 id="dateDisplay">Today</h2>
+            <div class="macros-grid">
+                <div class="macro-card">
+                    <div class="macro-label">Calories</div>
+                    <div class="macro-value">
+                        <span id="caloriesValue">0</span> / <span id="caloriesGoal">2000</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="caloriesProgress" class="progress-fill"></div>
+                    </div>
+                </div>
+                <div class="macro-card">
+                    <div class="macro-label">Protein</div>
+                    <div class="macro-value">
+                        <span id="proteinValue">0</span>g / <span id="proteinGoal">150</span>g
+                    </div>
+                    <div class="progress-bar">
+                        <div id="proteinProgress" class="progress-fill"></div>
+                    </div>
+                </div>
+                <div class="macro-card">
+                    <div class="macro-label">Carbs</div>
+                    <div class="macro-value">
+                        <span id="carbsValue">0</span>g / <span id="carbsGoal">200</span>g
+                    </div>
+                    <div class="progress-bar">
+                        <div id="carbsProgress" class="progress-fill"></div>
+                    </div>
+                </div>
+                <div class="macro-card">
+                    <div class="macro-label">Fat</div>
+                    <div class="macro-value">
+                        <span id="fatValue">0</span>g / <span id="fatGoal">65</span>g
+                    </div>
+                    <div class="progress-bar">
+                        <div id="fatProgress" class="progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Meals -->
+        <section class="meals">
+            <div class="meal-section" data-meal="breakfast">
+                <h3>Breakfast</h3>
+                <div class="meal-entries" id="breakfastEntries"></div>
+                <button class="add-food-btn" onclick="addFood('breakfast')">+ Add Food</button>
+            </div>
+            
+            <div class="meal-section" data-meal="lunch">
+                <h3>Lunch</h3>
+                <div class="meal-entries" id="lunchEntries"></div>
+                <button class="add-food-btn" onclick="addFood('lunch')">+ Add Food</button>
+            </div>
+            
+            <div class="meal-section" data-meal="dinner">
+                <h3>Dinner</h3>
+                <div class="meal-entries" id="dinnerEntries"></div>
+                <button class="add-food-btn" onclick="addFood('dinner')">+ Add Food</button>
+            </div>
+            
+            <div class="meal-section" data-meal="snack">
+                <h3>Snacks</h3>
+                <div class="meal-entries" id="snackEntries"></div>
+                <button class="add-food-btn" onclick="addFood('snack')">+ Add Food</button>
+            </div>
+        </section>
+
+        <!-- Add Food Modal -->
+        <div id="addFoodModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Add Food</h2>
+                    <button class="close-btn" onclick="closeModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" id="foodSearch" placeholder="Search for food..." class="search-input">
+                    <div id="searchResults" class="search-results"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barcode Scanner Modal -->
+        <div id="scannerModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Scan Barcode</h2>
+                    <button class="close-btn" onclick="closeScanner()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <video id="scanner" autoplay playsinline></video>
+                    <canvas id="scannerCanvas" style="display:none;"></canvas>
+                    <div id="scannerResult"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Modal -->
+        <div id="analysisModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>AI Analysis</h2>
+                    <button class="close-btn" onclick="closeAnalysis()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="analysisContent" class="analysis-content">
+                        <div class="loading">Analyzing your nutrition...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="js/scanner.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
