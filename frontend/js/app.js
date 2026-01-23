@@ -1,5 +1,5 @@
 // Configuration
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://192.168.68.67:8000';
 const USER_ID = 1; // For now, hardcode user 1. We'll add auth later.
 
 let currentMealType = '';

@@ -3,6 +3,7 @@
   "short_name": "IntelliEats",
   "description": "AI-powered nutrition tracking with barcode scanning",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#4F46E5",
   "theme_color": "#4F46E5",
